@@ -1,10 +1,11 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
   BOARD_SIZE,
   BOARD_TILE_COUNT,
   DAILY_BOARD,
+  getDailyBoard,
   calculateIslandState,
   isPlayerAction,
   validateAction,
@@ -304,4 +305,59 @@ test("valid action passes the PlayerAction type guard", () => {
 test("malformed data fails the PlayerAction type guard", () => {
   assert.equal(isPlayerAction(null), false);
   assert.equal(isPlayerAction({ actionType: "unknown" }), false);
+});
+
+
+test("November 22, 2026 keeps the original community board", () => {
+  assert.deepEqual(getDailyBoard("2026-11-22"), DAILY_BOARD);
+});
+
+test("the same date always produces the same daily board", () => {
+  assert.deepEqual(
+    getDailyBoard("2026-11-23"),
+    getDailyBoard("2026-11-23"),
+  );
+});
+
+test("different dates produce different board layouts", () => {
+  assert.notDeepEqual(
+    getDailyBoard("2026-11-23"),
+    getDailyBoard("2026-11-24"),
+  );
+});
+
+test("daily boards preserve the original terrain distribution", () => {
+  const countTerrains = (board: readonly { terrain: string }[]) => {
+    const counts: Record<string, number> = {};
+
+    for (const tile of board) {
+      counts[tile.terrain] = (counts[tile.terrain] ?? 0) + 1;
+    }
+
+    return counts;
+  };
+
+  assert.deepEqual(
+    countTerrains(getDailyBoard("2026-11-23")),
+    countTerrains(DAILY_BOARD),
+  );
+});
+
+test("generated daily boards contain 36 unique tiles in the 6x6 grid", () => {
+  const board = getDailyBoard("2026-11-23");
+  const ids = board.map((tile) => tile.id);
+
+  assert.equal(board.length, BOARD_TILE_COUNT);
+  assert.equal(new Set(ids).size, BOARD_TILE_COUNT);
+
+  for (const tile of board) {
+    assert.ok(tile.row >= 0 && tile.row < BOARD_SIZE);
+    assert.ok(tile.column >= 0 && tile.column < BOARD_SIZE);
+  }
+});
+
+test("daily board generator rejects invalid calendar dates", () => {
+  assert.throws(() => getDailyBoard("23-11-2026"));
+  assert.throws(() => getDailyBoard("2026-13-45"));
+  assert.throws(() => getDailyBoard("2026-02-30"));
 });

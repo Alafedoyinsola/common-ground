@@ -1,4 +1,4 @@
-﻿export const BOARD_SIZE = 6;
+export const BOARD_SIZE = 6;
 export const BOARD_TILE_COUNT = BOARD_SIZE * BOARD_SIZE;
 
 export type Terrain =
@@ -81,6 +81,75 @@ export const DAILY_BOARD: readonly BoardTile[] = [
   { id: "r5c4", row: 5, column: 4, terrain: "village" },
   { id: "r5c5", row: 5, column: 5, terrain: "mountain" },
 ];
+
+// Keep the November 22, 2026 board unchanged so existing
+// community contributions remain valid.
+export function getDailyBoard(date: string): readonly BoardTile[] {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("Daily board date must use YYYY-MM-DD format.");
+  }
+
+  const parsedDate = new Date(`${date}T00:00:00.000Z`);
+
+  if (
+    Number.isNaN(parsedDate.getTime()) ||
+    parsedDate.toISOString().slice(0, 10) !== date
+  ) {
+    throw new Error("Daily board date must be a valid calendar date.");
+  }
+
+  if (date === "2026-11-22") {
+    return DAILY_BOARD;
+  }
+
+  // FNV-1a date hash gives every UTC date a stable seed.
+  let seed = 2166136261;
+
+  for (let index = 0; index < date.length; index += 1) {
+    seed ^= date.charCodeAt(index);
+    seed = Math.imul(seed, 16777619);
+  }
+
+  if (seed === 0) seed = 1;
+
+  function random(): number {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return (seed >>> 0) / 4294967296;
+  }
+
+  // Shuffle the existing terrain distribution. This preserves
+  // the number of each terrain type while changing its location.
+  const terrains = DAILY_BOARD.map((tile) => tile.terrain);
+
+  for (let index = terrains.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    const currentTerrain = terrains[index]!;
+    const targetTerrain = terrains[swapIndex]!;
+
+    terrains[index] = targetTerrain;
+    terrains[swapIndex] = currentTerrain;
+  }
+
+  // Guarantee that a generated day differs from the legacy board.
+  if (
+    terrains.every(
+      (terrain, index) => terrain === DAILY_BOARD[index]!.terrain,
+    )
+  ) {
+    const firstTerrain = terrains[0]!;
+    const secondTerrain = terrains[1]!;
+
+    terrains[0] = secondTerrain;
+    terrains[1] = firstTerrain;
+  }
+
+  return DAILY_BOARD.map((tile, index) => ({
+    ...tile,
+    terrain: terrains[index]!,
+  }));
+}
 
 const ACTION_TERRAIN: Record<ActionType, Terrain> = {
   "restore-wetland": "wetland",

@@ -5,7 +5,11 @@ import type {
   BoardTile,
   Terrain,
 } from "../../shared/game";
-import { DAILY_BOARD } from "../../shared/game";
+import {
+  BOARD_TILE_COUNT,
+  DAILY_BOARD,
+  MAX_TILE_IMPROVEMENT,
+} from "../../shared/game";
 import type {
   GameActionResponse,
   GameStateResponse,
@@ -16,6 +20,8 @@ type TileView = {
   background: Phaser.GameObjects.Rectangle;
   label: Phaser.GameObjects.Text;
 };
+
+type MessageTone = "normal" | "success" | "error";
 
 const ACTION_BY_TERRAIN: Record<Terrain, ActionType | null> = {
   mountain: null,
@@ -34,19 +40,27 @@ const TERRAIN_LABELS: Record<Terrain, string> = {
 };
 
 const TERRAIN_COLORS: Record<Terrain, number> = {
-  mountain: 0x777d83,
-  forest: 0x28734b,
-  wetland: 0x247e9a,
-  farmland: 0xa77b38,
-  village: 0x986b58,
+  mountain: 0x68747c,
+  forest: 0x23764d,
+  wetland: 0x168ba0,
+  farmland: 0xb78a3e,
+  village: 0x9b6852,
 };
 
 export class Game extends Scene {
   private titleText!: Phaser.GameObjects.Text;
+  private subtitleText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
   private indicatorText!: Phaser.GameObjects.Text;
+  private legendTitle!: Phaser.GameObjects.Text;
+  private legendText!: Phaser.GameObjects.Text;
+  private progressText!: Phaser.GameObjects.Text;
+  private progressTrack!: Phaser.GameObjects.Rectangle;
+  private progressFill!: Phaser.GameObjects.Rectangle;
   private messageText!: Phaser.GameObjects.Text;
+
   private tileViews: TileView[] = [];
+  private board: readonly BoardTile[] = DAILY_BOARD;
   private gameState: GameStateResponse | undefined;
   private busy = false;
 
@@ -60,32 +74,96 @@ export class Game extends Scene {
     this.titleText = this.add.text(0, 0, "COMMON GROUND", {
       fontFamily: "Arial Black",
       fontSize: 27,
-      color: "#e9f5df",
+      color: "#eff8e9",
       align: "center",
     }).setOrigin(0.5);
 
+    this.subtitleText = this.add.text(
+      0,
+      0,
+      "THE LIVING WATERSHED",
+      {
+        fontFamily: "Arial",
+        fontSize: 11,
+        color: "#9dc5a7",
+        letterSpacing: 3,
+        align: "center",
+      },
+    ).setOrigin(0.5);
+
     this.statusText = this.add.text(0, 0, "Loading today's watershed...", {
       fontFamily: "Arial",
-      fontSize: 15,
+      fontSize: 12,
       color: "#c8dfcc",
       align: "center",
     }).setOrigin(0.5);
 
     this.indicatorText = this.add.text(0, 0, "", {
       fontFamily: "Arial",
-      fontSize: 14,
+      fontSize: 13,
       color: "#f0e9d4",
       align: "center",
       lineSpacing: 5,
     }).setOrigin(0.5);
 
-    this.messageText = this.add.text(0, 0, "Choose a tile to help restore the island.", {
-      fontFamily: "Arial",
-      fontSize: 13,
-      color: "#d6e5d5",
+    this.legendTitle = this.add.text(0, 0, "YOUR RESTORATION GUIDE", {
+      fontFamily: "Arial Black",
+      fontSize: 12,
+      color: "#e9f5df",
       align: "center",
-      wordWrap: { width: 340 },
     }).setOrigin(0.5);
+
+    this.legendText = this.add.text(
+      0,
+      0,
+      "FOREST  + Water  + Biodiversity\n" +
+      "WETLAND  ++ Water  + Biodiversity\n" +
+      "FARMLAND  + Food  - Water\n" +
+      "VILLAGE  + Wellbeing  - Water",
+      {
+        fontFamily: "Arial",
+        fontSize: 11,
+        color: "#c8dfcc",
+        align: "center",
+        lineSpacing: 4,
+      },
+    ).setOrigin(0.5);
+
+    this.progressText = this.add.text(0, 0, "COMMUNITY RESTORATION: 0%", {
+      fontFamily: "Arial Black",
+      fontSize: 11,
+      color: "#e9f5df",
+      align: "center",
+    }).setOrigin(0.5);
+
+    this.progressTrack = this.add.rectangle(
+      0,
+      0,
+      200,
+      9,
+      0x344c40,
+    ).setOrigin(0.5);
+
+    this.progressFill = this.add.rectangle(
+      0,
+      0,
+      0,
+      9,
+      0x79c58b,
+    ).setOrigin(0, 0.5);
+
+    this.messageText = this.add.text(
+      0,
+      0,
+      "Choose a tile to help restore the island.",
+      {
+        fontFamily: "Arial",
+        fontSize: 12,
+        color: "#d6e5d5",
+        align: "center",
+        wordWrap: { width: 340 },
+      },
+    ).setOrigin(0.5);
 
     this.createBoard();
 
@@ -95,8 +173,15 @@ export class Game extends Scene {
     void this.loadState();
   }
 
-  private createBoard() {
-    this.tileViews = DAILY_BOARD.map((tile) => {
+  private createBoard(board: readonly BoardTile[] = this.board) {
+    for (const view of this.tileViews) {
+      view.background.destroy();
+      view.label.destroy();
+    }
+
+    this.board = board;
+
+    this.tileViews = board.map((tile) => {
       const background = this.add.rectangle(
         0,
         0,
@@ -104,7 +189,7 @@ export class Game extends Scene {
         48,
         TERRAIN_COLORS[tile.terrain],
       )
-        .setStrokeStyle(2, 0xd8e6d0)
+        .setStrokeStyle(2, 0xc3d9c4)
         .setInteractive({ useHandCursor: true });
 
       const label = this.add.text(0, 0, TERRAIN_LABELS[tile.terrain], {
@@ -112,6 +197,7 @@ export class Game extends Scene {
         fontSize: 11,
         color: "#ffffff",
         align: "center",
+        lineSpacing: 2,
       }).setOrigin(0.5);
 
       background.on("pointerover", () => {
@@ -121,7 +207,7 @@ export class Game extends Scene {
       });
 
       background.on("pointerout", () => {
-        background.setStrokeStyle(2, 0xd8e6d0);
+        background.setStrokeStyle(2, 0xc3d9c4);
       });
 
       background.on("pointerdown", () => {
@@ -153,13 +239,16 @@ export class Game extends Scene {
       }
 
       this.gameState = payload as GameStateResponse;
+      this.createBoard(this.gameState.board);
+      this.updateLayout(this.scale.width, this.scale.height);
       this.refreshDisplay();
-      this.setMessage("Tap a forest, wetland, farm or village tile to contribute.");
+      this.setMessage("Choose a forest, wetland, farm or village tile.");
     } catch (error) {
       console.error("Failed to load game state:", error);
       this.statusText.setText("Unable to load the island");
       this.setMessage(
         error instanceof Error ? error.message : "Please try again.",
+        "error",
       );
     }
   }
@@ -173,7 +262,10 @@ export class Game extends Scene {
     }
 
     if (this.gameState.remainingActions <= 0) {
-      this.setMessage("You have used both of your actions for today.");
+      this.setMessage(
+        "You have used both of your actions for today.",
+        "error",
+      );
       return;
     }
 
@@ -185,7 +277,7 @@ export class Game extends Scene {
     }
 
     this.busy = true;
-    this.setMessage(`Submitting your contribution to ${tile.terrain}...`);
+    this.setMessage(`Restoring ${tile.terrain}...`);
 
     try {
       const requestId =
@@ -225,12 +317,16 @@ export class Game extends Scene {
       this.setMessage(
         result.result === "duplicate"
           ? "Your previous contribution was already recorded."
-          : "Contribution recorded. The community island has improved!",
+          : "Contribution saved! The community island is improving.",
+        "success",
       );
     } catch (error) {
       console.error("Failed to submit game action:", error);
       this.setMessage(
-        error instanceof Error ? error.message : "Your action could not be saved.",
+        error instanceof Error
+          ? error.message
+          : "Your action could not be saved.",
+        "error",
       );
     } finally {
       this.busy = false;
@@ -244,12 +340,12 @@ export class Game extends Scene {
     const { indicators } = state;
 
     this.statusText.setText(
-      `${username}  |  ${date}  |  Actions left: ${remainingActions}/2`,
+      `@${username}  |  ${date}  |  ${remainingActions}/2 actions left`,
     );
 
     this.indicatorText.setText(
-      `WATER ${indicators.waterSecurity}   FOOD ${indicators.foodProduction}\n` +
-      `BIODIVERSITY ${indicators.biodiversity}   COMMUNITY ${indicators.communityWellbeing}`,
+      `WATER ${indicators.waterSecurity}     FOOD ${indicators.foodProduction}\n` +
+      `BIODIVERSITY ${indicators.biodiversity}     WELLBEING ${indicators.communityWellbeing}`,
     );
 
     const improvedTiles = new Map(
@@ -261,13 +357,28 @@ export class Game extends Scene {
       const color = TERRAIN_COLORS[view.tile.terrain];
 
       view.background.setFillStyle(color);
-      view.background.setAlpha(level > 0 ? 1 : 0.78);
+      view.background.setAlpha(level > 0 ? 1 : 0.84);
       view.label.setText(
         level > 0
           ? `${TERRAIN_LABELS[view.tile.terrain]}\n${level}/3`
           : TERRAIN_LABELS[view.tile.terrain],
       );
     }
+
+    const progress = Math.min(
+      100,
+      Math.round(
+        (state.totalActions / (BOARD_TILE_COUNT * MAX_TILE_IMPROVEMENT)) *
+        100,
+      ),
+    );
+
+    this.progressText.setText(
+      `COMMUNITY RESTORATION: ${state.totalActions}/${BOARD_TILE_COUNT * MAX_TILE_IMPROVEMENT}  |  ${progress}%`,
+    );
+
+    const barWidth = this.progressTrack.width;
+    this.progressFill.setSize(barWidth * progress / 100, 9);
   }
 
   private getErrorMessage(payload: unknown): string {
@@ -283,10 +394,20 @@ export class Game extends Scene {
     return "The request could not be completed.";
   }
 
-  private setMessage(message: string) {
-    if (this.messageText) {
-      this.messageText.setText(message);
-    }
+  private setMessage(
+    message: string,
+    tone: MessageTone = "normal",
+  ) {
+    if (!this.messageText) return;
+
+    const colors: Record<MessageTone, string> = {
+      normal: "#d6e5d5",
+      success: "#9ee6a9",
+      error: "#ffaaa0",
+    };
+
+    this.messageText.setText(message);
+    this.messageText.setColor(colors[tone]);
   }
 
   private handleResize(gameSize: Phaser.Structs.Size) {
@@ -296,14 +417,17 @@ export class Game extends Scene {
   private updateLayout(width: number, height: number) {
     this.cameras.resize(width, height);
 
-    this.titleText.setPosition(width / 2, 35);
-    this.statusText.setPosition(width / 2, 76);
-    this.indicatorText.setPosition(width / 2, 119);
+    this.titleText.setPosition(width / 2, 25);
+    this.subtitleText.setPosition(width / 2, 52);
+    this.statusText.setPosition(width / 2, 78);
+    this.statusText.setFontSize(13);
+    this.indicatorText.setPosition(width / 2, 117);
 
-    const boardSize = Math.min(width - 28, height * 0.56, 560);
+    const boardSize = Math.min(width - 28, height * 0.44, 500);
     const cellSize = boardSize / 6;
     const boardLeft = (width - boardSize) / 2;
-    const boardTop = Math.max(165, (height - boardSize) * 0.48);
+    const boardTop = 150;
+    const boardBottom = boardTop + boardSize;
 
     for (const view of this.tileViews) {
       const x = boardLeft + view.tile.column * cellSize + cellSize / 2;
@@ -315,7 +439,24 @@ export class Game extends Scene {
       view.label.setFontSize(Math.max(9, Math.min(13, cellSize * 0.22)));
     }
 
-    this.messageText.setPosition(width / 2, height - 35);
+    this.legendTitle.setPosition(width / 2, boardBottom + 14);
+    this.legendText.setPosition(width / 2, boardBottom + 48);
+    this.legendText.setFontSize(12);
+    this.progressText.setPosition(width / 2, boardBottom + 88);
+    this.progressText.setFontSize(12);
+
+    const progressWidth = Math.min(width - 64, 320);
+    const progressY = boardBottom + 106;
+
+    this.progressTrack.setPosition(width / 2, progressY);
+    this.progressTrack.setSize(progressWidth, 9);
+
+    this.progressFill.setPosition(
+      width / 2 - progressWidth / 2,
+      progressY,
+    );
+
+    this.messageText.setPosition(width / 2, height - 20);
     this.messageText.setWordWrapWidth(Math.max(220, width - 30));
   }
 }

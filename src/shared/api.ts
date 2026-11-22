@@ -1,4 +1,4 @@
-﻿import type { IslandState } from "./game";
+import type { IslandState } from "./game";
 
 export type InitResponse = {
   type: "init";
@@ -24,6 +24,7 @@ export type GameStateResponse = {
   date: string;
   username: string;
   remainingActions: number;
+  board: import("./game").BoardTile[];
   state: IslandState;
 };
 

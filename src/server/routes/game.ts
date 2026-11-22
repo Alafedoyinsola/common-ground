@@ -1,10 +1,12 @@
-﻿import { Hono } from 'hono';
+import { Hono } from 'hono';
 import { redis, reddit } from '@devvit/web/server';
 
 import {
   calculateIslandState,
+  getDailyBoard,
   isPlayerAction,
   validateAction,
+  type BoardTile,
   type PlayerAction,
 } from '../../shared/game';
 
@@ -31,18 +33,24 @@ function getPlayerField(username: string, slot: number): string {
   return `player:${username.toLowerCase()}:${slot}`;
 }
 
-function parseStoredAction(value: string): PlayerAction | undefined {
+function parseStoredAction(
+  value: string,
+  board: readonly BoardTile[],
+): PlayerAction | undefined {
   try {
     const parsed: unknown = JSON.parse(value);
-    return isPlayerAction(parsed) ? parsed : undefined;
+    return isPlayerAction(parsed, board) ? parsed : undefined;
   } catch {
     return undefined;
   }
 }
 
-function getActions(entries: Record<string, string>): PlayerAction[] {
+function getActions(
+  entries: Record<string, string>,
+  board: readonly BoardTile[],
+): PlayerAction[] {
   return Object.values(entries).flatMap((value) => {
-    const action = parseStoredAction(value);
+    const action = parseStoredAction(value, board);
     return action ? [action] : [];
   });
 }
@@ -70,8 +78,9 @@ game.get('/state', async (c) => {
     }
 
     const date = getUtcDate();
+    const board = getDailyBoard(date);
     const entries = await redis.hGetAll(getDailyKey(date));
-    const actions = getActions(entries);
+    const actions = getActions(entries, board);
     const usedSlots = getUsedSlots(entries, username);
 
     return c.json({
@@ -79,7 +88,8 @@ game.get('/state', async (c) => {
       date,
       username,
       remainingActions: ACTIONS_PER_PLAYER - usedSlots,
-      state: calculateIslandState(actions),
+      board: [...board],
+      state: calculateIslandState(actions, board),
     });
   } catch (error) {
     console.error('Game state error:', error);
@@ -101,6 +111,9 @@ game.post('/actions', async (c) => {
         401,
       );
     }
+
+    const date = getUtcDate();
+    const board = getDailyBoard(date);
 
     let body: unknown;
 
@@ -128,8 +141,8 @@ game.post('/actions', async (c) => {
       createdAt: Date.now(),
     };
 
-    if (!isPlayerAction(candidate)) {
-      const validation = validateAction(candidate);
+    if (!isPlayerAction(candidate, board)) {
+      const validation = validateAction(candidate, board);
 
       return c.json<ErrorResponse>(
         {
@@ -143,7 +156,6 @@ game.post('/actions', async (c) => {
     }
 
     const action = candidate;
-    const date = getUtcDate();
     const key = getDailyKey(date);
 
     let result: 'accepted' | 'duplicate' | 'conflict' | 'full' = 'full';
@@ -153,7 +165,7 @@ game.post('/actions', async (c) => {
       const existing = await redis.hGet(key, field);
 
       if (existing) {
-        const stored = parseStoredAction(existing);
+        const stored = parseStoredAction(existing, board);
 
         if (stored?.requestId === action.requestId) {
           result =
@@ -180,7 +192,7 @@ game.post('/actions', async (c) => {
 
       // Another request claimed this slot after our initial read.
       const latest = await redis.hGet(key, field);
-      const stored = latest ? parseStoredAction(latest) : undefined;
+      const stored = latest ? parseStoredAction(latest, board) : undefined;
 
       if (stored?.requestId === action.requestId) {
         result =
@@ -213,7 +225,7 @@ game.post('/actions', async (c) => {
     }
 
     const entries = await redis.hGetAll(key);
-    const actions = getActions(entries);
+    const actions = getActions(entries, board);
     const usedSlots = getUsedSlots(entries, username);
 
     return c.json({
@@ -222,7 +234,8 @@ game.post('/actions', async (c) => {
       date,
       username,
       remainingActions: ACTIONS_PER_PLAYER - usedSlots,
-      state: calculateIslandState(actions),
+      board: [...board],
+      state: calculateIslandState(actions, board),
     });
   } catch (error) {
     console.error('Game action error:', error);

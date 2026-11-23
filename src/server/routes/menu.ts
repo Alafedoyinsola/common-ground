@@ -9,34 +9,29 @@ menu.post('/post-create', async (c) => {
   try {
     const post = await createPost();
 
+    if (!post?.id) {
+      throw new Error('Post creation succeeded but did not return a valid post ID');
+    }
+
+    const subredditName = context.subredditName || post.subredditName;
+    const postUrl = subredditName
+      ? `https://reddit.com/r/${subredditName}/comments/${post.id}`
+      : (post.url || `https://reddit.com/comments/${post.id}`);
+
     return c.json<UiResponse>(
       {
-        navigateTo: `https://reddit.com/r/${context.subredditName}/comments/${post.id}`,
+        navigateTo: postUrl,
       },
       200
     );
   } catch (error) {
-    console.error(`Error creating post: ${error}`);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error creating daily challenge post: ${errorMessage}`);
     return c.json<UiResponse>(
       {
-        showToast: 'Failed to create post',
+        showToast: 'Failed to create daily challenge post',
       },
       400
     );
   }
-});
-
-menu.post('/example-form', async (c) => {
-  return c.json<UiResponse>(
-    {
-      showForm: {
-        name: 'exampleForm',
-        form: {
-          title: 'Example form',
-          fields: [{ name: 'message', label: 'Message', type: 'string' }],
-        },
-      },
-    },
-    200
-  );
 });
